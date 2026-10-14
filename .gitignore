@@ -36,7 +36,8 @@ ScaffoldingReadMe.txt
 # NuGet Symbol Packages
 *.snupkg
 
-# dotenv environment variables file
+# environment variables file
+appsettings.Development.json
 .env
 
 # Others
