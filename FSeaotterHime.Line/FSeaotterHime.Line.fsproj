@@ -5,6 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Middlewares.fs" />
     <Compile Include="Routers.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
