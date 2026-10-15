@@ -2,7 +2,7 @@ module FSeaotterHime.Line.Routers
 
 open Oxpecker
 open FSeaotterHime.Line.Middlewares
+open FSeaotterHime.Line.Handlers
 
-let getMainRouter = [ 
-    GET [ route "/" <| text "Hello, World!" ]
-    POST [ route "/callback" <| (verifySignatureMiddleware >=> text "Success!" ) ] ]
+let getMainRouter =
+    [ POST [ route "/callback" <| (verifySignatureMiddleware >=> eventHandler) ] ]
