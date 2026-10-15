@@ -1,6 +1,7 @@
 module FSeaotterHime.Line.Handlers
 
 open System
+open System.Text.RegularExpressions
 open System.Net.Http
 open System.Net.Http.Headers
 open System.Net.Http.Json
@@ -11,6 +12,10 @@ open Oxpecker
 open FSeaotterHime.Line.Models
 
 let private httpClient = new HttpClient()
+
+let private myRegex = Regex(@"(?i)^n\d{1,6}$", RegexOptions.Compiled)
+
+let private cialloTable = [ "ciallo"; "(∠・ω< )"; "恰"; "洽"; "囉"; "摟" ]
 
 let private fortuneTable =
     [ 90, "你再抽一次🤡"
@@ -29,7 +34,7 @@ let private getFortunate () =
     |> Option.map snd
     |> Option.defaultValue "大凶☠️"
 
-let private replyTextAsync (accessToken: string) (replyToken: string) (text: string) =
+let private replyTextAsync (accessToken: string) (replyToken: string) (texts: string list) =
     task {
         use request =
             new HttpRequestMessage(HttpMethod.Post, "https://api.line.me/v2/bot/message/reply")
@@ -39,7 +44,7 @@ let private replyTextAsync (accessToken: string) (replyToken: string) (text: str
         request.Content <-
             JsonContent.Create(
                 {| replyToken = replyToken
-                   messages = [ {| ``type`` = "text"; text = text |} ] |}
+                   messages = texts |> List.map (fun t -> {| ``type`` = "text"; text = t |}) |}
             )
 
         let! response = httpClient.SendAsync(request)
@@ -65,15 +70,26 @@ let eventHandler: EndpointHandler =
                     let text = msg.Text |> Option.defaultValue ""
                     logger.LogInformation("收到文字訊息: {Text}", text)
 
-                    let replyMessageOpt =
-                        match text with
-                        | t when t.Contains "運" -> Some <| $"💫您今天的運勢: {getFortunate ()}"
-                        | _ -> None
+                    let replyMessages =
+                        [ if myRegex.IsMatch(text) then
+                              $"https://nhentai.net/g/{text.Substring(1)}.html"
+                          if text.Contains "運" then
+                              $"💫您今天的運勢: {getFortunate ()}"
+                          if text.Contains "查" then
+                              "以下是查分器連結 請妥善使用～\nhttps://redive.estertion.win/arcaea/probe/"
+                          if text.StartsWith "vc" then
+                              "仙草快跟他結婚#"
+                          if text.Contains "天堂門" then
+                              "Snowth快去P!!!"
+                          if
+                              cialloTable
+                              |> List.exists (fun k -> text.Contains(k, StringComparison.OrdinalIgnoreCase))
+                          then
+                              "Ciallo～(∠・ω< )⌒☆" ]
 
                     // send reply message
-                    match replyMessageOpt with
-                    | Some replyMessage -> do! replyTextAsync accessToken replyToken replyMessage
-                    | None -> ()
+                    if not replyMessages.IsEmpty then
+                        do! replyTextAsync accessToken replyToken (replyMessages |> List.truncate 5)
                 | _ -> logger.LogInformation("收到其他事件: {Type}", event.Type)
 
             return! ctx.WriteText "Success!"
