@@ -13,5 +13,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            line:
+              - 'FSeaotterHime.Line/**'
+            discord:
+              - 'FSeaotterHime.Discord/**'
+
       - uses: actions/setup-dotnet@v4
-      - run: dotnet build FSeaotterHime.slnx --configuration Release
+
+      - name: Build Line
+        if: steps.changes.outputs.line == 'true'
+        run: dotnet build FSeaotterHime.Line/FSeaotterHime.Line.fsproj --configuration Release
+
+      - name: Build Discord
+        if: steps.changes.outputs.discord == 'true'
+        run: dotnet build FSeaotterHime.Discord/FSeaotterHime.Discord.fsproj --configuration Release
