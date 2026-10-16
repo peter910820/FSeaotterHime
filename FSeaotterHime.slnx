@@ -1,4 +1,5 @@
 <Solution>
   <Project Path="FSeaotterHime.Discord/FSeaotterHime.Discord.fsproj" />
   <Project Path="FSeaotterHime.Line/FSeaotterHime.Line.fsproj" />
+  <Project Path="FSeaotterHime/FSeaotterHime.fsproj" />
 </Solution>

@@ -22,6 +22,7 @@ jobs:
           filters: |
             line:
               - 'FSeaotterHime.Line/**'
+              - 'FSeaotterHime/**'
             discord:
               - 'FSeaotterHime.Discord/**'
 

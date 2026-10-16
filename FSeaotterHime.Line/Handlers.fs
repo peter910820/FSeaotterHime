@@ -9,6 +9,7 @@ open Microsoft.AspNetCore.Http
 open Microsoft.Extensions.Configuration
 open Microsoft.Extensions.Logging
 open Oxpecker
+open FSeaotterHime.Fortune
 open FSeaotterHime.Line.Models
 
 let private httpClient = new HttpClient()
@@ -16,23 +17,6 @@ let private httpClient = new HttpClient()
 let private myRegex = Regex(@"(?i)^n\d{1,6}$", RegexOptions.Compiled)
 
 let private cialloTable = [ "ciallo"; "(∠・ω< )"; "恰"; "洽"; "囉"; "摟" ]
-
-let private fortuneTable =
-    [ 90, "你再抽一次🤡"
-      85, "仙草吉👑"
-      75, "大吉⭐"
-      60, "中吉🌟"
-      40, "小吉👌"
-      20, "末吉🙏"
-      5, "凶💀" ]
-
-let private getFortunate () =
-    let randNumber = System.Random.Shared.Next(100)
-
-    fortuneTable
-    |> List.tryFind (fun (threshold, _) -> randNumber > threshold)
-    |> Option.map snd
-    |> Option.defaultValue "大凶☠️"
 
 let private replyTextAsync (accessToken: string) (replyToken: string) (texts: string list) =
     task {
