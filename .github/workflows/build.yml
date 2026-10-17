@@ -25,6 +25,7 @@ jobs:
               - 'FSeaotterHime/**'
             discord:
               - 'FSeaotterHime.Discord/**'
+              - 'FSeaotterHime/**'
 
       - uses: actions/setup-dotnet@v4
 
