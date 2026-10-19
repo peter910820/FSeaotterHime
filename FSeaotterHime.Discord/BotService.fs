@@ -1,10 +1,12 @@
 module FSeaotterHime.Discord.BotService
 
 open System
+open System.Threading
 open System.Threading.Tasks
 open Discord
 open Discord.WebSocket
 open Microsoft.Extensions.Configuration
+open Microsoft.Extensions.Hosting
 open Microsoft.Extensions.Logging
 
 let writeLog (logger: ILogger) (message: LogMessage) =
@@ -37,3 +39,10 @@ let start (client: DiscordSocketClient) (config: IConfiguration) (logger: ILogge
         :> Task
 
 let stop (client: DiscordSocketClient) = client.StopAsync()
+
+let hostedService (client: DiscordSocketClient) (config: IConfiguration) (loggerFactory: ILoggerFactory) =
+    let logger = loggerFactory.CreateLogger("FSeaotterHime.Discord")
+
+    { new IHostedService with
+        member _.StartAsync(_: CancellationToken) = start client config logger
+        member _.StopAsync(_: CancellationToken) = stop client }
