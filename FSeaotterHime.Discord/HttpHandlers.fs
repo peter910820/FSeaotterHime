@@ -1,32 +1,40 @@
 module FSeaotterHime.Discord.HttpHandlers
 
 open System
-open Discord
-open Discord.WebSocket
+open System.Threading.Tasks
 open Microsoft.AspNetCore.Http
+open Microsoft.Extensions.Configuration
 open Microsoft.Extensions.Logging
 open Oxpecker
 open type Microsoft.AspNetCore.Http.TypedResults
 
-let sendTestMessage (channelId: uint64) (content: string) : EndpointHandler =
+let youtubeVerification : EndpointHandler =
     fun (ctx: HttpContext) ->
         task {
             let logger = ctx.GetLogger()
-            let client = ctx.GetService<DiscordSocketClient>()
+            let query = ctx.Request.Query
+            let mode = string query["hub.mode"]
+            let topic = string query["hub.topic"]
+            let challenge = string query["hub.challenge"]
+            let verifyToken = string query["hub.verify_token"]
+            let expectedToken = ctx.GetService<IConfiguration>()["PubSubHubbub:VerifyToken"]
 
-            if String.IsNullOrWhiteSpace content then
-                return! ctx.Write <| BadRequest {| Error = "訊息不可為空" |}
-            elif client.LoginState <> LoginState.LoggedIn then
-                return!
-                    ctx.Write
-                    <| Json({| Error = "Discord 尚未連線" |}, statusCode = StatusCodes.Status503ServiceUnavailable)
+            let deny (reason: string) =
+                logger.LogWarning("拒絕 YouTube 訂閱驗證：{Reason}", reason)
+                ctx.Write <| StatusCode StatusCodes.Status404NotFound
+
+            if String.IsNullOrEmpty expectedToken || verifyToken <> expectedToken then
+                return! deny "verify_token 不符"
+            elif String.IsNullOrEmpty challenge then
+                return! deny "缺少 hub.challenge"
+            elif mode <> "subscribe" && mode <> "unsubscribe" then
+                return! deny "hub.mode 不正確"
             else
-                let! channel = client.GetChannelAsync(channelId)
-
-                match channel with
-                | :? IMessageChannel as messageChannel ->
-                    let! message = messageChannel.SendMessageAsync(content)
-                    logger.LogInformation("已發送測試訊息 {MessageId} 到 {ChannelId}", message.Id, channelId)
-                    return! ctx.Write <| Ok {| MessageId = message.Id |}
-                | _ -> return! ctx.Write <| NotFound {| Error = "找不到可發訊的頻道" |}
+                logger.LogInformation("確認 YouTube {Mode} {Topic}", mode, topic)
+                return! ctx.Write <| Text(challenge, "text/plain")
         }
+
+let youtubeNotification : EndpointHandler =
+    fun (ctx: HttpContext) ->
+        ctx.GetLogger().LogInformation("收到 YouTube 推播")
+        Task.CompletedTask

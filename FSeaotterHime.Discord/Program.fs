@@ -12,6 +12,7 @@ open Microsoft.Extensions.Hosting
 open Microsoft.Extensions.Logging
 open Oxpecker
 open type Microsoft.AspNetCore.Http.TypedResults
+open FSeaotterHime.Database
 open FSeaotterHime.Discord.Routers
 
 let errorHandler (ctx: HttpContext) (next: RequestDelegate) =
@@ -37,9 +38,14 @@ let notFoundHandler (ctx: HttpContext) =
     logger.LogWarning("Unhandled 404 error")
     ctx.Write <| NotFound {| Error = "Resource was not found" |}
 
-let configureServices (services: IServiceCollection) =
+let configureServices (services: IServiceCollection) (config: IConfiguration) =
     let socketConfig =
         DiscordSocketConfig(GatewayIntents = (GatewayIntents.AllUnprivileged ||| GatewayIntents.MessageContent))
+
+    match config.GetConnectionString("Postgres") with
+    | null
+    | "" -> invalidOp "ConnectionStrings:Postgres 未設定"
+    | connectionString -> addAppDbContext services connectionString
 
     services
         .AddSingleton<DiscordSocketClient>(
@@ -62,8 +68,15 @@ let configureApp (appBuilder: IApplicationBuilder) =
 [<EntryPoint>]
 let main args =
     let builder = WebApplication.CreateBuilder(args)
-    configureServices builder.Services
+    configureServices builder.Services builder.Configuration
     let app = builder.Build()
+    ensureCreated app.Services
+
+    app
+        .Services.GetRequiredService<ILoggerFactory>()
+        .CreateLogger("FSeaotterHime.Discord")
+        .LogInformation("已連上 PostgreSQL")
+
     configureApp app
     app.Run()
     0
