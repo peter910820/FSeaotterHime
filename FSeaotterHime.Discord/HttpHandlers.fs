@@ -1,12 +1,63 @@
 module FSeaotterHime.Discord.HttpHandlers
 
 open System
-open System.Threading.Tasks
+open System.IO
+open System.Text
+open System.Xml.Linq
 open Microsoft.AspNetCore.Http
 open Microsoft.Extensions.Configuration
 open Microsoft.Extensions.Logging
 open Oxpecker
 open type Microsoft.AspNetCore.Http.TypedResults
+
+let private atomName name =
+    XName.Get(name, "http://www.w3.org/2005/Atom")
+
+let private ytName name =
+    XName.Get(name, "http://www.youtube.com/xml/schemas/2015")
+
+type YoutubeVideo =
+    { VideoId: string
+      ChannelId: string
+      Title: string
+      Url: string }
+
+let private elementValue (element: XElement) name =
+    match element.Element(name) with
+    | null -> None
+    | child -> Some child.Value
+
+let private alternateUrl (entry: XElement) (videoId: string) =
+    entry.Elements(atomName "link")
+    |> Seq.tryPick (fun link ->
+        let rel = link.Attribute(XName.Get "rel")
+        let href = link.Attribute(XName.Get "href")
+
+        if rel <> null && href <> null && rel.Value = "alternate" then
+            Some href.Value
+        else
+            None)
+    |> Option.defaultValue $"https://www.youtube.com/watch?v={videoId}"
+
+let parseYoutubeVideo (body: string) =
+    let doc = XDocument.Parse(body)
+
+    match doc.Root with
+    | null -> None
+    | root ->
+        match root.Element(atomName "entry") with
+        | null -> None
+        | entry ->
+            match elementValue entry (ytName "videoId"),
+                  elementValue entry (ytName "channelId"),
+                  elementValue entry (atomName "title") with
+            | Some videoId, Some channelId, Some title ->
+                Some
+                    { VideoId = videoId
+                      ChannelId = channelId
+                      Title = title
+                      Url = alternateUrl entry videoId }
+            | _ -> None
 
 let youtubeVerification : EndpointHandler =
     fun (ctx: HttpContext) ->
@@ -36,5 +87,19 @@ let youtubeVerification : EndpointHandler =
 
 let youtubeNotification : EndpointHandler =
     fun (ctx: HttpContext) ->
-        ctx.GetLogger().LogInformation("收到 YouTube 推播")
-        Task.CompletedTask
+        task {
+            use reader = new StreamReader(ctx.Request.Body, Encoding.UTF8, true, 1024, true)
+            let! body = reader.ReadToEndAsync()
+            let logger = ctx.GetLogger()
+
+            match parseYoutubeVideo body with
+            | None -> logger.LogWarning("YouTube 推播沒有影片")
+            | Some video ->
+                logger.LogInformation(
+                    "YouTube 影片 {VideoId} {Title} {ChannelId} {Url}",
+                    video.VideoId,
+                    video.Title,
+                    video.ChannelId,
+                    video.Url
+                )
+        }
