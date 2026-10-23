@@ -3,13 +3,14 @@ module FSeaotterHime.Database
 open System
 open System.ComponentModel.DataAnnotations
 open System.ComponentModel.DataAnnotations.Schema
+open System.Threading.Tasks
 open Microsoft.EntityFrameworkCore
 open Microsoft.EntityFrameworkCore.Infrastructure
 open Microsoft.EntityFrameworkCore.Storage
 open Microsoft.Extensions.DependencyInjection
 
 [<CLIMutable>]
-[<Table("youtube_subscription")>]
+[<Table("youtube_subscriptions")>]
 type YoutubeSubscription =
     { [<Key>]
       [<Column("id")>]
@@ -40,6 +41,27 @@ let ensureCreated (services: IServiceProvider) =
 
     if not (creator.HasTables()) then
         creator.CreateTables()
+
+let saveYoutubeSubscription (services: IServiceProvider) (subscription: YoutubeSubscription) : Task =
+    task {
+        use scope = services.CreateScope()
+        let db = scope.ServiceProvider.GetRequiredService<AppDbContext>()
+
+        let! existing =
+            (query {
+                for current in db.YoutubeSubscriptions do
+                    where (current.Id = subscription.Id)
+                    select current
+            })
+                .ToListAsync()
+
+        match Seq.tryHead existing with
+        | None -> db.YoutubeSubscriptions.Add(subscription) |> ignore
+        | existing -> db.Entry(existing).CurrentValues.SetValues(subscription)
+
+        let! _ = db.SaveChangesAsync()
+        return ()
+    }
 
 let querySubscriptionsExpiringWithinOneDay (services: IServiceProvider) =
     task {
@@ -74,7 +96,13 @@ let renewSubscriptionExpiresAt (services: IServiceProvider) (channelId: string) 
         match Seq.tryHead rows with
         | None -> return false
         | Some subscription ->
-            db.Entry(subscription).CurrentValues.SetValues({ subscription with ExpiresAt = expiresAt })
+            db
+                .Entry(subscription)
+                .CurrentValues.SetValues(
+                    { subscription with
+                        ExpiresAt = expiresAt }
+                )
+
             let! _ = db.SaveChangesAsync()
             return true
     }

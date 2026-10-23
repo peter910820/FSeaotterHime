@@ -9,6 +9,7 @@ open Microsoft.Extensions.Configuration
 open Microsoft.Extensions.Logging
 open Oxpecker
 open type Microsoft.AspNetCore.Http.TypedResults
+open FSeaotterHime.Database
 
 let private atomName name =
     XName.Get(name, "http://www.w3.org/2005/Atom")
@@ -39,6 +40,17 @@ let private alternateUrl (entry: XElement) (videoId: string) =
             None)
     |> Option.defaultValue $"https://www.youtube.com/watch?v={videoId}"
 
+let private tryGetYoutubeChannelId (topic: string) =
+    match Uri.TryCreate(topic, UriKind.Absolute) with
+    | true, uri ->
+        uri.Query.TrimStart('?').Split('&')
+        |> Array.tryPick (fun parameter ->
+            match parameter.Split('=', 2) with
+            | [| "channel_id"; channelId |] when not (String.IsNullOrEmpty channelId) ->
+                Some(Uri.UnescapeDataString(channelId))
+            | _ -> None)
+    | false, _ -> None
+
 let parseYoutubeVideo (body: string) =
     let doc = XDocument.Parse(body)
 
@@ -68,7 +80,10 @@ let youtubeVerification : EndpointHandler =
             let topic = string query["hub.topic"]
             let challenge = string query["hub.challenge"]
             let verifyToken = string query["hub.verify_token"]
-            let expectedToken = ctx.GetService<IConfiguration>()["PubSubHubbub:VerifyToken"]
+            let leaseSeconds = string query["hub.lease_seconds"]
+            let config = ctx.GetService<IConfiguration>()
+            let expectedToken = config["PubSubHubbub:VerifyToken"]
+            let discordChannelId = config["Discord:YoutubeSubscriptionChannelId"]
 
             let deny (reason: string) =
                 logger.LogWarning("拒絕 YouTube 訂閱驗證：{Reason}", reason)
@@ -80,7 +95,21 @@ let youtubeVerification : EndpointHandler =
                 return! deny "缺少 hub.challenge"
             elif mode <> "subscribe" && mode <> "unsubscribe" then
                 return! deny "hub.mode 不正確"
+            elif mode = "subscribe" && String.IsNullOrEmpty discordChannelId then
+                return! deny "Discord:YoutubeSubscriptionChannelId 未設定"
             else
+                if mode = "subscribe" then
+                    match tryGetYoutubeChannelId topic, Int32.TryParse leaseSeconds with
+                    | Some channelId, (true, seconds) ->
+                        do!
+                            saveYoutubeSubscription
+                                ctx.RequestServices
+                                { Id = channelId
+                                  ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(float seconds)
+                                  DiscordChannelId = discordChannelId }
+                    | None, _ -> return! deny "hub.topic 缺少 channel_id"
+                    | _, _ -> return! deny "hub.lease_seconds 不正確"
+
                 logger.LogInformation("確認 YouTube {Mode} {Topic}", mode, topic)
                 return! ctx.Write <| Text(challenge, "text/plain")
         }
