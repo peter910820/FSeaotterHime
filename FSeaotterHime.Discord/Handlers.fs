@@ -7,17 +7,6 @@ open Discord.WebSocket
 open Microsoft.Extensions.Logging
 open FSeaotterHime.Fortune
 
-let private replyText (message: SocketMessage) =
-    if message.Author.IsBot || String.IsNullOrWhiteSpace message.Content then
-        None
-    else
-        Some message.Content
-
-let private echo (message: SocketMessage) =
-    match replyText message with
-    | None -> Task.CompletedTask
-    | Some text -> message.Channel.SendMessageAsync(text) :> Task
-
 let private avatarUrl (user: SocketUser) =
     user.GetAvatarUrl()
     |> Option.ofObj
@@ -60,8 +49,6 @@ let register (client: DiscordSocketClient) (logger: ILogger) =
             }
             :> Task)
     )
-
-    client.add_MessageReceived (Func<SocketMessage, Task>(echo))
 
     client.add_SlashCommandExecuted (
         Func<SocketSlashCommand, Task>(fun command ->
