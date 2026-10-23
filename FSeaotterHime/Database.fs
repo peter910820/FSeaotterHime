@@ -25,7 +25,7 @@ type YoutubeSubscription =
 type AppDbContext(options: DbContextOptions<AppDbContext>) =
     inherit DbContext(options)
 
-    member val YoutubeSubscriptions: DbSet<YoutubeSubscription> = Unchecked.defaultof<_> with get, set
+    member this.YoutubeSubscriptions = this.Set<YoutubeSubscription>()
 
 let addAppDbContext (services: IServiceCollection) (connectionString: string) =
     services.AddDbContext<AppDbContext>(fun options -> options.UseNpgsql(connectionString) |> ignore)
