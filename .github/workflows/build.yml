@@ -7,9 +7,19 @@ on:
   pull_request:
     branches:
       - main
+  workflow_call:
+    inputs:
+      project:
+        required: true
+        type: string
+    outputs:
+      binary_name:
+        description: Published executable name
+        value: ${{ jobs.publish.outputs.binary_name }}
 
 jobs:
   build:
+    if: inputs.project == ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -36,3 +46,49 @@ jobs:
       - name: Build Discord
         if: steps.changes.outputs.discord == 'true'
         run: dotnet build FSeaotterHime.Discord/FSeaotterHime.Discord.fsproj --configuration Release
+
+  publish:
+    if: inputs.project != ''
+    runs-on: ubuntu-latest
+    outputs:
+      binary_name: ${{ steps.target.outputs.name }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Select publish target
+        id: target
+        shell: bash
+        run: |
+          if [[ "${{ inputs.project }}" == "discord" ]]; then
+            echo "path=FSeaotterHime.Discord/FSeaotterHime.Discord.fsproj" >> "$GITHUB_OUTPUT"
+            echo "name=FSeaotterHime.Discord" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=FSeaotterHime.Line/FSeaotterHime.Line.fsproj" >> "$GITHUB_OUTPUT"
+            echo "name=FSeaotterHime.Line" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish Linux single-file executable
+        run: >
+          dotnet publish "${{ steps.target.outputs.path }}"
+          -c Release
+          -r linux-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -o publish
+
+      - name: Keep executable only
+        shell: bash
+        run: find publish -maxdepth 1 -type f ! -name "${{ steps.target.outputs.name }}" -delete
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.target.outputs.name }}
+          path: publish/${{ steps.target.outputs.name }}
+          retention-days: 3
