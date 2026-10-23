@@ -4,5 +4,6 @@ open Oxpecker
 open FSeaotterHime.Discord.HttpHandlers
 
 let getMainRouter =
-    [ GET [ route "/youtube/callback" youtubeVerification ]
+    [ GET [ route "/youtube/subscriptions" youtubeSubscriptionsPage
+            route "/youtube/callback" youtubeVerification ]
       POST [ route "/youtube/callback" youtubeNotification ] ]

@@ -8,6 +8,7 @@ open Microsoft.AspNetCore.Http
 open Microsoft.Extensions.Configuration
 open Microsoft.Extensions.Logging
 open Oxpecker
+open Oxpecker.ViewEngine
 open type Microsoft.AspNetCore.Http.TypedResults
 open FSeaotterHime.Database
 
@@ -50,6 +51,30 @@ let private tryGetYoutubeChannelId (topic: string) =
                 Some(Uri.UnescapeDataString(channelId))
             | _ -> None)
     | false, _ -> None
+
+let private youtubeSubscriptionsTable (subscriptions: YoutubeSubscription list) =
+    table(class' = "subscriptions") {
+        thead() {
+            tr() {
+                th() { "YouTube 頻道 ID" }
+                th() { "到期時間" }
+                th() { "Discord 頻道 ID" }
+            }
+        }
+        tbody() {
+            if List.isEmpty subscriptions then
+                tr() {
+                    td().attr("colspan", "3") { "尚無訂閱資料。" }
+                }
+            else
+                for subscription in subscriptions do
+                    tr() {
+                        td() { subscription.Id }
+                        td() { subscription.ExpiresAt.ToString("O") }
+                        td() { subscription.DiscordChannelId }
+                    }
+        }
+    }
 
 let parseYoutubeVideo (body: string) =
     let doc = XDocument.Parse(body)
@@ -112,6 +137,72 @@ let youtubeVerification : EndpointHandler =
 
                 logger.LogInformation("確認 YouTube {Mode} {Topic}", mode, topic)
                 return! ctx.Write <| Text(challenge, "text/plain")
+        }
+
+let youtubeSubscriptionsPage : EndpointHandler =
+    fun (ctx: HttpContext) ->
+        task {
+            let! subscriptions = queryYoutubeSubscriptions ctx.RequestServices
+
+            let page =
+                html().attr("lang", "zh-Hant") {
+                    head() {
+                        meta(charset = "utf-8")
+                        title() { "YouTube 訂閱資料" }
+                        style() {
+                            raw
+                                """
+body {
+    max-width: 960px;
+    margin: 48px auto;
+    padding: 0 24px;
+    background: #f8fafc;
+    color: #1e293b;
+    font-family: system-ui, sans-serif;
+}
+
+h1 {
+    margin-bottom: 24px;
+}
+
+.subscriptions {
+    width: 100%;
+    border-collapse: collapse;
+    overflow: hidden;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px #0000001a;
+}
+
+.subscriptions th,
+.subscriptions td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.subscriptions th {
+    background: #0f766e;
+    color: white;
+}
+
+.subscriptions tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.subscriptions tbody tr:hover {
+    background: #f0fdfa;
+}
+"""
+                        }
+                    }
+                    body() {
+                        h1() { "YouTube 訂閱資料" }
+                        youtubeSubscriptionsTable subscriptions
+                    }
+                }
+
+            return! ctx.Write <| Text(page |> Render.toHtmlDocString, "text/html; charset=utf-8")
         }
 
 let youtubeNotification : EndpointHandler =

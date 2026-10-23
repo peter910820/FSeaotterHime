@@ -63,6 +63,22 @@ let saveYoutubeSubscription (services: IServiceProvider) (subscription: YoutubeS
         return ()
     }
 
+let queryYoutubeSubscriptions (services: IServiceProvider) : Task<YoutubeSubscription list> =
+    task {
+        use scope = services.CreateScope()
+        let db = scope.ServiceProvider.GetRequiredService<AppDbContext>()
+
+        let! subscriptions =
+            (query {
+                for subscription in db.YoutubeSubscriptions do
+                    sortBy subscription.Id
+                    select subscription
+            })
+                .ToListAsync()
+
+        return subscriptions |> List.ofSeq
+    }
+
 let querySubscriptionsExpiringWithinOneDay (services: IServiceProvider) =
     task {
         use scope = services.CreateScope()
