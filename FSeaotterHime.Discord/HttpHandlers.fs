@@ -4,6 +4,8 @@ open System
 open System.IO
 open System.Text
 open System.Xml.Linq
+open Discord
+open Discord.WebSocket
 open Microsoft.AspNetCore.Http
 open Microsoft.Extensions.Configuration
 open Microsoft.Extensions.Logging
@@ -23,6 +25,17 @@ type YoutubeVideo =
       ChannelId: string
       Title: string
       Url: string }
+
+let private youtubeVideoEmbed (video: YoutubeVideo) =
+    EmbedBuilder()
+        .WithTitle(video.Title)
+        .WithUrl(video.Url)
+        .WithDescription("新的 YouTube 影片已發布")
+        .WithColor(Color.Red)
+        .AddField("頻道 ID", video.ChannelId, true)
+        .AddField("影片 ID", video.VideoId, true)
+        .WithFooter("YouTube")
+        .Build()
 
 let private elementValue (element: XElement) name =
     match element.Element(name) with
@@ -222,4 +235,29 @@ let youtubeNotification : EndpointHandler =
                     video.ChannelId,
                     video.Url
                 )
+
+                let! subscription = tryFindYoutubeSubscription ctx.RequestServices video.ChannelId
+
+                match subscription with
+                | None -> logger.LogWarning("找不到 YouTube 頻道 {ChannelId} 的訂閱資料", video.ChannelId)
+                | Some subscription ->
+                    match UInt64.TryParse subscription.DiscordChannelId with
+                    | false, _ ->
+                        logger.LogWarning(
+                            "YouTube 頻道 {ChannelId} 的 Discord 頻道 ID 無效：{DiscordChannelId}",
+                            video.ChannelId,
+                            subscription.DiscordChannelId
+                        )
+                    | true, discordChannelId ->
+                        let client = ctx.GetService<DiscordSocketClient>()
+
+                        match box (client.GetChannel discordChannelId) with
+                        | :? IMessageChannel as channel ->
+                            let! _ = channel.SendMessageAsync(embed = youtubeVideoEmbed video)
+                            ()
+                        | _ ->
+                            logger.LogWarning(
+                                "找不到可發訊息的 Discord 頻道 {DiscordChannelId}",
+                                subscription.DiscordChannelId
+                            )
         }

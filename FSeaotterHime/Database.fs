@@ -79,6 +79,25 @@ let queryYoutubeSubscriptions (services: IServiceProvider) : Task<YoutubeSubscri
         return subscriptions |> List.ofSeq
     }
 
+let tryFindYoutubeSubscription
+    (services: IServiceProvider)
+    (channelId: string)
+    : Task<YoutubeSubscription option> =
+    task {
+        use scope = services.CreateScope()
+        let db = scope.ServiceProvider.GetRequiredService<AppDbContext>()
+
+        let! subscriptions =
+            (query {
+                for subscription in db.YoutubeSubscriptions do
+                    where (subscription.Id = channelId)
+                    select subscription
+            })
+                .ToListAsync()
+
+        return subscriptions |> Seq.tryHead
+    }
+
 let querySubscriptionsExpiringWithinOneDay (services: IServiceProvider) =
     task {
         use scope = services.CreateScope()
