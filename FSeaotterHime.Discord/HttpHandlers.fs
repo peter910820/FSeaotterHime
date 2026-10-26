@@ -20,29 +20,57 @@ let private atomName name =
 let private ytName name =
     XName.Get(name, "http://www.youtube.com/xml/schemas/2015")
 
+let private mediaName name =
+    XName.Get(name, "http://search.yahoo.com/mrss/")
+
 type YoutubeVideo =
     { VideoId: string
       ChannelId: string
       Title: string
-      Url: string }
+      Url: string
+      Description: string option
+      ThumbnailUrl: string }
 
 let private youtubeVideoEmbed (video: YoutubeVideo) =
-    EmbedBuilder()
-        .WithTitle(video.Title)
-        .WithUrl(video.Url)
-        .WithDescription("新的 YouTube 影片已發布")
-        .WithColor(Color.Red)
-        .AddField("頻道 ID", video.ChannelId, true)
-        .AddField("影片 ID", video.VideoId, true)
-        .WithFooter("YouTube")
-        .Build()
+    let builder =
+        EmbedBuilder()
+            .WithTitle(video.Title)
+            .WithUrl(video.Url)
+            .WithThumbnailUrl(video.ThumbnailUrl)
+            .WithColor(Color.Red)
+
+    match video.Description with
+    | Some description when not (String.IsNullOrWhiteSpace description) ->
+        builder.WithDescription(description).Build()
+    | _ -> builder.Build()
 
 let private elementValue (element: XElement) name =
     match element.Element(name) with
     | null -> None
     | child -> Some child.Value
 
-let private alternateUrl (entry: XElement) (videoId: string) =
+let private attributeValue (element: XElement) name =
+    match element.Attribute(XName.Get name) with
+    | null -> None
+    | attribute -> Some attribute.Value
+
+let private mediaGroup (entry: XElement) =
+    match entry.Element(mediaName "group") with
+    | null -> None
+    | group -> Some group
+
+let private mediaDescription (entry: XElement) =
+    mediaGroup entry
+    |> Option.bind (fun group -> elementValue group (mediaName "description"))
+
+let private mediaThumbnailUrl (entry: XElement) =
+    mediaGroup entry
+    |> Option.bind (fun group ->
+        match group.Element(mediaName "thumbnail") with
+        | null -> None
+        | thumbnail -> attributeValue thumbnail "url")
+
+let private alternateUrl (entry: XElement) =
     entry.Elements(atomName "link")
     |> Seq.tryPick (fun link ->
         let rel = link.Attribute(XName.Get "rel")
@@ -52,7 +80,6 @@ let private alternateUrl (entry: XElement) (videoId: string) =
             Some href.Value
         else
             None)
-    |> Option.defaultValue $"https://www.youtube.com/watch?v={videoId}"
 
 let private tryGetYoutubeChannelId (topic: string) =
     match Uri.TryCreate(topic, UriKind.Absolute) with
@@ -100,13 +127,18 @@ let parseYoutubeVideo (body: string) =
         | entry ->
             match elementValue entry (ytName "videoId"),
                   elementValue entry (ytName "channelId"),
-                  elementValue entry (atomName "title") with
-            | Some videoId, Some channelId, Some title ->
+                  elementValue entry (atomName "title"),
+                  alternateUrl entry with
+            | Some videoId, Some channelId, Some title, Some url ->
                 Some
                     { VideoId = videoId
                       ChannelId = channelId
                       Title = title
-                      Url = alternateUrl entry videoId }
+                      Url = url
+                      Description = mediaDescription entry
+                      ThumbnailUrl =
+                        mediaThumbnailUrl entry
+                        |> Option.defaultValue $"https://i.ytimg.com/vi/{videoId}/hqdefault.jpg" }
             | _ -> None
 
 let youtubeVerification : EndpointHandler =
@@ -224,6 +256,7 @@ let youtubeNotification : EndpointHandler =
             use reader = new StreamReader(ctx.Request.Body, Encoding.UTF8, true, 1024, true)
             let! body = reader.ReadToEndAsync()
             let logger = ctx.GetLogger()
+            logger.LogInformation("YouTube 推播 payload：{Payload}", body)
 
             match parseYoutubeVideo body with
             | None -> logger.LogWarning("YouTube 推播沒有影片")
